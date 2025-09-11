@@ -1,0 +1,3 @@
+name = "movie-bot-worker"
+main = "index.js"
+compatibility_date = "2025-09-11"
