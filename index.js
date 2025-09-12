@@ -1,62 +1,70 @@
 export default {
-  async fetch(request, env, ctx) {
-    if (request.method !== "POST") {
-      return new Response("Forward Bot Running!");
-    }
-
-    const update = await request.json();
+  async fetch(request, env) {
     const BOT_TOKEN = "8415169170:AAEAiOeu5vZj8tX9dfvWohZ-T20vyfnLNvE";
-    const firebaseURL = "https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app";
+    const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+    const FIREBASE_URL = "https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-    // ----------------- USER START -----------------
-    if (update.message && update.message.text === "/start") {
-      const userId = update.message.chat.id;
+    if (request.method === "POST") {
+      const update = await request.json();
 
-      // Save user
-      await fetch(`${firebaseURL}/Users/${userId}.json`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(true)
-      });
+      if (update.message) {
+        const chatId = update.message.chat.id;
+        const text = update.message.text?.toLowerCase();
 
-      // Get all movies
-      const moviesRes = await fetch(`${firebaseURL}/Movies.json`);
-      const movies = await moviesRes.json() || {};
+        if (text === "/start") {
+          // Firebase se Movies laao
+          const res = await fetch(`${FIREBASE_URL}/Movies.json`);
+          const movies = await res.json();
 
-      for (const title of Object.keys(movies)) {
-        for (const quality of Object.keys(movies[title])) {
-          const movie = movies[title][quality];
-          const key = `${title}-${quality}`;
+          if (movies) {
+            let sentSet = new Set();
 
-          // Check already sent
-          const sentRes = await fetch(`${firebaseURL}/Sent/${userId}/${key}.json`);
-          const alreadySent = await sentRes.json();
+            for (const title in movies) {
+              for (const quality in movies[title]) {
+                const movie = movies[title][quality];
 
-          if (!alreadySent) {
-            // Forward movie
-            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/forwardMessage`, {
+                const uniqueKey = movie.chat_id + "_" + movie.message_id;
+                if (sentSet.has(uniqueKey)) continue;
+
+                // Forward karo
+                await fetch(`${API_URL}/forwardMessage`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    chat_id: chatId,
+                    from_chat_id: movie.chat_id,
+                    message_id: movie.message_id
+                  })
+                });
+
+                sentSet.add(uniqueKey);
+              }
+            }
+
+            // Done message
+            await fetch(`${API_URL}/sendMessage`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                chat_id: userId,
-                from_chat_id: movie.chat_id,
-                message_id: movie.message_id
+                chat_id: chatId,
+                text: "✅ Sab movies forward ho gayi!"
               })
             });
-
-            // Mark as sent
-            await fetch(`${firebaseURL}/Sent/${userId}/${key}.json`, {
-              method: "PUT",
+          } else {
+            await fetch(`${API_URL}/sendMessage`, {
+              method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(true)
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: "⚠️ Database khali hai."
+              })
             });
           }
         }
       }
-
       return new Response("ok");
     }
 
-    return new Response("ok");
+    return new Response("Forward Bot Running ✅");
   }
 }
