@@ -1,78 +1,46 @@
-export default {
-  async fetch(request) {
-    try {
-      const apiUrl = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-      const res = await fetch(apiUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-          "Accept": "application/json, text/plain, */*",
-          "Referer": "https://draw.ar-lottery01.com/",
-          "Origin": "https://draw.ar-lottery01.com"
-        }
-      });
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request))
+})
 
-      if (!res.ok) throw `API request failed with status ${res.status}`;
-      const data = await res.json();
+async function handleRequest(request) {
+  const url = new URL(request.url)
+  const target = url.searchParams.get("url") // Example: ?url=https://api.example.com/data
+  const device = url.searchParams.get("device") || "mobile" // optional: mobile/tablet/desktop
 
-      const list = data?.data?.list;
-      if (!Array.isArray(list) || list.length === 0) {
-        throw "API returned no results (data.list empty)";
-      }
-
-      // 🔥 Firebase Realtime DB base
-      const firebaseBase = `https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app/satta.json`;
-      const fbGet = await fetch(firebaseBase);
-      const existing = fbGet.ok ? await fbGet.json() : {};
-
-      let logs = [];
-      let savedCount = 0, skippedCount = 0;
-
-      for (let item of list.slice(0, 10)) {
-        const issue = String(item.issueNumber);
-        const number = parseInt(item.number, 10);
-        const type = number <= 4 ? "SMALL" : "BIG";
-        const timestamp = new Date().toISOString();
-
-        if (existing && existing[issue]) {
-          skippedCount++;
-          logs.push({ issue, status: "skipped" });
-          continue;
-        }
-
-        const fbUrl = `https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app/satta/${issue}.json`;
-        const fbRes = await fetch(fbUrl, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            result_number: number,
-            type,
-            timestamp
-          })
-        });
-
-        if (fbRes.ok) {
-          savedCount++;
-          logs.push({ issue, status: "saved" });
-        } else {
-          logs.push({ issue, status: "error", reason: fbRes.status });
-        }
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Sync done",
-          summary: { saved: savedCount, skipped: skippedCount },
-          logs
-        }, null, 2),
-        { headers: { "Content-Type": "application/json" } }
-      );
-
-    } catch (err) {
-      return new Response(
-        JSON.stringify({ success: false, error: err.toString() }, null, 2),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
+  // Mobile / Tablet / Desktop headers
+  const userAgents = {
+    mobile: 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
+    tablet: 'Mozilla/5.0 (Linux; Android 13; Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
   }
-};
+
+  const headers = {
+    'User-Agent': userAgents[device],
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://example.com', // optional, API dependent
+    'Origin': 'https://example.com'
+  }
+
+  try {
+    const response = await fetch(target, {
+      method: request.method,
+      headers: headers,
+      body: request.body ? request.body : undefined
+    })
+
+    // Pass through original response headers & status
+    const respHeaders = new Headers(response.headers)
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: respHeaders
+    })
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+}
