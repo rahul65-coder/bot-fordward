@@ -13,10 +13,13 @@ export default {
       if (!res.ok) throw `API request failed with status ${res.status}`;
       const data = await res.json();
 
+      // ✅ Always use data.list
       const list = data?.data?.list;
-      if (!Array.isArray(list) || list.length === 0) throw "No results in API";
+      if (!Array.isArray(list) || list.length === 0) {
+        throw "No results in API (data.list empty)";
+      }
 
-      // 2️⃣ Get all existing data from Firebase
+      // 2️⃣ Get existing data from Firebase
       const firebaseBase = `https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app/Api.json`;
       const fbGet = await fetch(firebaseBase);
       const existing = fbGet.ok ? await fbGet.json() : {};
@@ -35,7 +38,7 @@ export default {
           if (existing && existing[issueNumber]) {
             skippedCount++;
             logs.push({ issueNumber, status: "skipped", reason: "Already exists in Firebase" });
-            continue; // skip duplicate
+            continue;
           }
 
           const number = parseInt(item.number, 10);
@@ -71,16 +74,12 @@ export default {
         }
       }
 
-      // 4️⃣ Response with full log
+      // 4️⃣ Response with detailed log
       return new Response(
         JSON.stringify({
           success: true,
           message: "Data sync completed",
-          summary: {
-            saved: savedCount,
-            skipped: skippedCount,
-            errors: errorCount
-          },
+          summary: { saved: savedCount, skipped: skippedCount, errors: errorCount },
           logCenter: logs
         }, null, 2),
         { headers: { "Content-Type": "application/json" } }
