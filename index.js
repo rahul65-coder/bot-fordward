@@ -1,46 +1,64 @@
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request))
-})
+export default {
+  async scheduled(event, env, ctx) {
+    try {
+      // 1️⃣ Fetch API with headers
+      const apiUrl = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+      const res = await fetch(apiUrl, {
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          "Referer": "https://draw.ar-lottery01.com/"
+        }
+      });
 
-async function handleRequest(request) {
-  const url = new URL(request.url)
-  const target = url.searchParams.get("url") // Example: ?url=https://api.example.com/data
-  const device = url.searchParams.get("device") || "mobile" // optional: mobile/tablet/desktop
+      if (!res.ok) throw new Error(`API fetch failed: ${res.status}`);
 
-  // Mobile / Tablet / Desktop headers
-  const userAgents = {
-    mobile: 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
-    tablet: 'Mozilla/5.0 (Linux; Android 13; Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+      const json = await res.json();
+      if (!json?.data?.list) throw new Error("API returned no data.list");
+
+      // 2️⃣ Get current Firebase data to prevent duplicates
+      const firebaseUrl = "https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app/Lottery.json";
+      const fbRes = await fetch(firebaseUrl);
+      const existingData = fbRes.ok ? await fbRes.json() : {};
+
+      const lotteryDataToSave = {};
+      let newCount = 0;
+
+      json.data.list.forEach(item => {
+        const issueNumber = item.issueNumber;
+
+        // Skip if already exists
+        if (existingData && existingData[issueNumber]) return;
+
+        lotteryDataToSave[issueNumber] = {
+          type: Number(item.number) >= 5 ? "big" : "small",
+          colour: item.color,
+          number: Number(item.number)
+        };
+        newCount++;
+      });
+
+      if (newCount === 0) {
+        console.log("No new lottery results to save ✅");
+        return new Response("No new results", { status: 200 });
+      }
+
+      // 3️⃣ Save new results to Firebase
+      const saveRes = await fetch(firebaseUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(lotteryDataToSave)
+      });
+
+      if (!saveRes.ok) throw new Error(`Failed saving to Firebase: ${saveRes.status}`);
+
+      console.log(`✅ Successfully saved ${newCount} new lottery results`);
+
+      return new Response(`Saved ${newCount} new results`, { status: 200 });
+
+    } catch (err) {
+      console.error("❌ Error in scheduled worker:", err);
+      return new Response(`Error: ${err.message}`, { status: 500 });
+    }
   }
-
-  const headers = {
-    'User-Agent': userAgents[device],
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://example.com', // optional, API dependent
-    'Origin': 'https://example.com'
-  }
-
-  try {
-    const response = await fetch(target, {
-      method: request.method,
-      headers: headers,
-      body: request.body ? request.body : undefined
-    })
-
-    // Pass through original response headers & status
-    const respHeaders = new Headers(response.headers)
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: respHeaders
-    })
-
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    })
-  }
-}
+};
