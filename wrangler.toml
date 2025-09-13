@@ -1,3 +1,3 @@
-name = "movie-bot-worker"
+name = "fordward"
 main = "index.js"
 compatibility_date = "2025-09-11"
